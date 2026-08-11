@@ -1,21 +1,12 @@
-"""BLS time-series ingestion logic.
+"""Data ingestion logic for BLS and DataUSA Population API.
 
 All configuration (URLs, headers, paths, rate-limit settings) is owned by the
-calling notebook and passed in as arguments — this module holds no constants
-of its own.
-
-Layout within this file:
-    create_retry_session()   Infrastructure: builds a retrying requests.Session.
-    get_directory_items()    Business logic: scrape one directory page.
-    get_all_survey_codes()   Business logic: top-level survey code discovery.
-    sync_file()              Business logic: idempotent single-file download,
-                              via a HEAD-request size check against Content-Length.
-    run_full_bls_ingestion() Orchestration: sequences surveys -> files, paces
-                              requests, tracks stats, prints a summary.
+calling notebook and passed in as arguments.
 """
 
 import os
 import time
+import hashlib
 from urllib.parse import urljoin
 
 import requests
@@ -49,11 +40,11 @@ def create_retry_session(
 
 
 # --------------------------------------------------------------------------
-# Business logic
+# BLS Business Logic
 # --------------------------------------------------------------------------
 
 def get_directory_items(session: requests.Session, url: str) -> list[str]:
-    """Scrapes a single BLS directory page and returns its sorted, de-duplicated item names."""
+    """Scrapes a BLS directory page and returns its sorted, de-duplicated item names dynamically."""
     response = session.get(url)
     response.raise_for_status()
 
@@ -62,16 +53,14 @@ def get_directory_items(session: requests.Session, url: str) -> list[str]:
 
     for link in soup.find_all("a"):
         href = link.get("href", "")
-
-        # Clean path into segments: '/pub/time.series/ap/' -> ['pub', 'time.series', 'ap']
         segments = [segment for segment in href.strip("/").split("/") if segment]
         if not segments:
             continue
 
         name = segments[-1]
-
-        # Skip parent-directory navigation links and URL queries
-        if name in ("pub", "time.series", "") or href.startswith("?") or "[To Parent Directory]" in link.text:
+        
+        # Skip navigation links and URL queries
+        if name in ("pub", "time.series", "pr", "") or href.startswith("?") or "[To Parent Directory]" in link.text:
             continue
 
         items.append(name)
@@ -79,19 +68,8 @@ def get_directory_items(session: requests.Session, url: str) -> list[str]:
     return sorted(set(items))
 
 
-def get_all_survey_codes(
-    session: requests.Session,
-    base_url: str,
-    ignored_items: set[str] = frozenset({"overview.txt", "compressed", "sdmx"}),
-) -> list[str]:
-    """Returns valid top-level survey directory codes, filtering out non-survey entries."""
-    items = get_directory_items(session, base_url)
-    return [item for item in items if item not in ignored_items]
-
-
 def sync_file(session: requests.Session, file_url: str, local_path: str) -> str:
-    """Uses a HEAD request to check file sizes before downloading."""
-    
+    """Uses a HEAD request to check file sizes before downloading to ensure idempotency."""
     # 1. Fetch only the headers without downloading the body
     head_response = session.head(file_url)
     
@@ -100,7 +78,6 @@ def sync_file(session: requests.Session, file_url: str, local_path: str) -> str:
         head_response = session.get(file_url, stream=True)
         
     head_response.raise_for_status()
-    
     remote_size = int(head_response.headers.get('Content-Length', 0))
     
     # Close the fallback GET connection immediately if we opened one
@@ -125,74 +102,84 @@ def sync_file(session: requests.Session, file_url: str, local_path: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# Population API Business Logic
+# --------------------------------------------------------------------------
+
+def sync_population_api(session: requests.Session, endpoint_url: str, local_path: str) -> str:
+    """Fetches DataUSA JSON, checks for deltas via content hashing, and overwrites if changed."""
+    response = session.get(endpoint_url)
+    response.raise_for_status()
+    new_data = response.content
+
+    # Check for existing delta
+    if os.path.exists(local_path):
+        with open(local_path, 'rb') as f:
+            old_data = f.read()
+        
+        # Skip if content hash matches exactly (no new additions/changes)
+        if hashlib.md5(new_data).hexdigest() == hashlib.md5(old_data).hexdigest():
+            return "SKIPPED"
+
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    with open(local_path, 'wb') as f:
+        f.write(new_data)
+        
+    return "DOWNLOADED"
+
+
+# --------------------------------------------------------------------------
 # Orchestration
 # --------------------------------------------------------------------------
 
-def run_full_bls_ingestion(
+def run_ingestion(
     session: requests.Session,
-    base_url: str,
+    bls_pr_url: str,
+    population_api_url: str,
     volume_root: str,
     request_delay: float = 0.5,
-    limit_surveys: int | None = None,
 ) -> dict:
     """
-    Discovers all BLS survey directories and syncs their files into the target volume.
-
-    Args:
-        session: a requests.Session (typically from create_retry_session()).
-        base_url: root BLS time-series directory URL.
-        volume_root: local/Databricks Volume root path to sync files into.
-        request_delay: seconds to sleep between requests to stay within BLS rate limits.
-        limit_surveys: if set, only process the first N surveys (handy for a test run).
-
-    Returns:
-        Dict of run counts: {"SKIPPED": int, "DOWNLOADED": int, "FAILED": int}.
+    Discovers all BLS /pr/ files and Population API records, syncing them into the target volume.
     """
-    print("Discovering all BLS survey codes...")
-    surveys = get_all_survey_codes(session, base_url)
-    target_surveys = surveys[:limit_surveys] if limit_surveys else surveys
-
-    print(f"Found {len(surveys)} survey directories.")
-    if limit_surveys:
-        print(f"Processing first {len(target_surveys)} surveys (test mode).")
-    print(f"Target surveys: {target_surveys}")
-
     stats = {"SKIPPED": 0, "DOWNLOADED": 0, "FAILED": 0}
 
-    for idx, survey in enumerate(target_surveys, start=1):
-        clean_survey = survey.replace("pub/time.series/", "").strip("/")
-        survey_url = urljoin(base_url, f"{clean_survey}/")
-        survey_dir = os.path.join(volume_root, clean_survey)
+    # 1. Process BLS PR Directory
+    print(f"Discovering files dynamically at {bls_pr_url}...")
+    try:
+        bls_files = get_directory_items(session, bls_pr_url)
+        print(f"Found {len(bls_files)} files in BLS /pr/ directory.")
+        
+        bls_dir = os.path.join(volume_root, "pr")
+        
+        for filename in bls_files:
+            file_url = urljoin(bls_pr_url, filename)
+            local_path = os.path.join(bls_dir, filename)
 
-        try:
-            files = get_directory_items(session, survey_url)
-            print(f"Found files in survey '{clean_survey}': {files}")
+            try:
+                status = sync_file(session, file_url, local_path)
+                stats[status] += 1
+            except Exception as e:
+                print(f"Failed BLS sync {filename}: {e}")
+                stats["FAILED"] += 1
 
-            for filename in files:
-                file_url = urljoin(survey_url, filename)
-                local_path = os.path.join(survey_dir, filename)
+            time.sleep(request_delay)  # polite delay between file requests
+    except Exception as e:
+        print(f"Failed processing BLS directory: {e}")
 
-                try:
-                    status = sync_file(session, file_url, local_path)
-                    stats[status] += 1
-                except Exception as e:
-                    print(f"Failed {clean_survey}/{filename}: {e}")
-                    stats["FAILED"] += 1
+    # 2. Process Population API
+    print(f"Syncing DataUSA Population API data...")
+    pop_local_path = os.path.join(volume_root, "population", "population_data.json")
+    try:
+        status = sync_population_api(session, population_api_url, pop_local_path)
+        stats[status] += 1
+        print(f"Population API sync status: {status}")
+    except Exception as e:
+        print(f"Failed Population API sync: {e}")
+        stats["FAILED"] += 1
 
-                time.sleep(request_delay)  # polite delay between file requests
-
-        except Exception as e:
-            print(f"Failed processing survey directory '{clean_survey}': {e}")
-
-        time.sleep(request_delay)  # polite delay between survey directories
-        print(f"[{idx}/{len(target_surveys)}] Survey '{clean_survey}' synced.")
-
-    _print_summary(stats)
-    return stats
-
-
-def _print_summary(stats: dict) -> None:
     print("\n--- INGESTION SUMMARY ---")
     print(f"Files Skipped (Unchanged): {stats['SKIPPED']}")
     print(f"Files Downloaded/Updated:  {stats['DOWNLOADED']}")
     print(f"Files Failed:              {stats['FAILED']}")
+    
+    return stats

@@ -1,20 +1,14 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
-# MAGIC # BLS Bronze -> Silver -> Gold — Orchestration Driver
+# MAGIC # BLS & Population Bronze -> Silver -> Gold — Orchestration Driver
 # MAGIC
-# MAGIC This notebook is **not** part of the declarative pipeline graph — it's the
-# MAGIC control-plane notebook that documents/sets the pipeline's configuration and
-# MAGIC triggers a run of the Spark Declarative Pipeline defined in `pipelines/bronze.py`,
-# MAGIC `pipelines/silver.py`, and `pipelines/gold.py` (spec: `pipelines/pipeline.yml`).
-# MAGIC
-# MAGIC Declarative pipeline transformation files execute inside the *pipeline's own*
-# MAGIC Spark session, not this notebook's — so they can't read a Python variable set here.
-# MAGIC They read `bls_pipeline.catalog` / `bls_pipeline.schema` / `bls_pipeline.volume`
-# MAGIC from **pipeline configuration** instead (see `pipelines/pipeline_config.py`).
-# MAGIC Make sure the values below match what's set under the pipeline's Configuration —
-# MAGIC this notebook doesn't push them there; it just needs to agree with them so the
-# MAGIC ingestion step (existing `bls_pipeline.py` routine) and the declarative pipeline
-# MAGIC are pointed at the same Volume.
+# MAGIC This notebook documents/sets the pipeline's configuration and triggers a run of the 
+# MAGIC Spark Declarative Pipeline. Declarative pipeline transformation files execute inside 
+# MAGIC the *pipeline's own* Spark session.
 
 # COMMAND ----------
 
@@ -29,44 +23,41 @@ print(f"Target: {CATALOG}.{SCHEMA} | Volume root: {VOLUME_ROOT} | Pipeline ID: {
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Step 1 — Preserve existing ingestion
-# MAGIC Unchanged: reuses the existing `bls_pipeline.py` sync routine to land raw files
+# MAGIC ### Step 1 — Preserve and Extend Ingestion
+# MAGIC Trigger idempotent syncs for both BLS /pr/ files and DataUSA population records to land raw files
 # MAGIC in the Volume before the declarative pipeline reads them.
 
 # COMMAND ----------
 
-# MAGIC %skip
-# MAGIC from src.bls_pipeline import create_retry_session, run_full_bls_ingestion
-# MAGIC
-# MAGIC HEADERS = {
-# MAGIC     "User-Agent": "DataEngineeringTeam dev-contact@mycompany.com",
-# MAGIC     "Accept-Encoding": "identity",
-# MAGIC }
-# MAGIC
-# MAGIC session = create_retry_session(headers=HEADERS)
-# MAGIC
-# MAGIC ingestion_stats = run_full_bls_ingestion(
-# MAGIC     session=session,
-# MAGIC     base_url="https://download.bls.gov/pub/time.series/",
-# MAGIC     volume_root=VOLUME_ROOT,
-# MAGIC     request_delay=0.5,
-# MAGIC     limit_surveys=None,  # full run; set to an int to test against a handful of surveys
-# MAGIC )
-# MAGIC print(ingestion_stats)
+from src.bls_pipeline import create_retry_session, run_ingestion
+
+HEADERS = {
+    "User-Agent": "DataEngineeringTeam dev-contact@mycompany.com",
+    "Accept-Encoding": "identity",
+}
+
+session = create_retry_session(headers=HEADERS)
+
+BLS_PR_URL = "https://download.bls.gov/pub/time.series/pr/"
+POPULATION_API_URL = "https://honolulu-api.datausa.io/tesseract/data.jsonrecords?cube=acs_yg_total_population_1&drilldowns=Year%2CNation&locale=en&measures=Population"
+
+ingestion_stats = run_ingestion(
+    session=session,
+    bls_pr_url=BLS_PR_URL,
+    population_api_url=POPULATION_API_URL,
+    volume_root=VOLUME_ROOT,
+    request_delay=0.5,
+)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Step 2 — Trigger the declarative pipeline run
-# MAGIC The pipeline itself must already exist (created via UI or Asset Bundle) pointing
-# MAGIC at the `pipelines/` folder, with its Configuration section set to the same
-# MAGIC catalog/schema/volume values as above. This cell just starts an update and
-# MAGIC polls it to completion — it doesn't define the pipeline.
+# MAGIC Triggers the update on the declarative pipelines resolving from the updated Volume paths.
 
 # COMMAND ----------
 
 import time
-
 from databricks.sdk import WorkspaceClient
 
 if not PIPELINE_ID:
@@ -90,20 +81,3 @@ if state != "COMPLETED":
     raise RuntimeError(f"Pipeline update ended in state '{state}'. Check the pipeline event log for details.")
 
 print("Pipeline run completed successfully — Bronze, Silver, and Gold tables are refreshed.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3 — Spot-check Gold output
-
-# COMMAND ----------
-
-spark.table(f"{CATALOG}.{SCHEMA}.gold_population_stats_2013_2018").show(truncate=False)
-
-# COMMAND ----------
-
-spark.table(f"{CATALOG}.{SCHEMA}.gold_best_year_per_series").show(10, truncate=False)
-
-# COMMAND ----------
-
-spark.table(f"{CATALOG}.{SCHEMA}.gold_prs30006032_q1_population").show(truncate=False)
