@@ -12,6 +12,18 @@
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC -- 1. Create the catalog
+# MAGIC CREATE CATALOG IF NOT EXISTS bls;
+# MAGIC
+# MAGIC -- 2. Create the schema inside the catalog
+# MAGIC CREATE SCHEMA IF NOT EXISTS bls.bls_time_series;
+# MAGIC
+# MAGIC -- 3. Create the volume inside the schema
+# MAGIC CREATE VOLUME IF NOT EXISTS bls.bls_time_series.bls_raw_files;
+
+# COMMAND ----------
+
 CATALOG = "bls"
 SCHEMA = "bls_time_series"
 VOLUME = "bls_raw_files"
