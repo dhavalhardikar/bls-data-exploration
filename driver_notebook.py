@@ -4,9 +4,9 @@
 # environment_version = "5"
 # ///
 # MAGIC %md
-# MAGIC # BLS & Population Bronze -> Silver -> Gold — Orchestration Driver
+# MAGIC ## BLS & Population Bronze -> Silver -> Gold — Orchestration Driver
 # MAGIC
-# MAGIC This notebook documents/sets the pipeline's configuration and triggers a run of the 
+# MAGIC This notebook sets the pipeline's configuration and triggers a run of the 
 # MAGIC Spark Declarative Pipeline. Declarative pipeline transformation files execute inside 
 # MAGIC the *pipeline's own* Spark session.
 
@@ -27,6 +27,7 @@
 CATALOG = "bls"
 SCHEMA = "bls_time_series"
 VOLUME = "bls_raw_files"
+# ETL pipeline ID which will trigger Databricks declarative pipeline
 PIPELINE_ID = "c19606ab-f63b-487c-b555-6641c2d1a561"
 
 VOLUME_ROOT = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
@@ -48,6 +49,7 @@ HEADERS = {
     "Accept-Encoding": "identity",
 }
 
+# Creates request session object so that headers and connection pooling can be reused across multiple requests
 session = create_retry_session(headers=HEADERS)
 
 BLS_PR_URL = "https://download.bls.gov/pub/time.series/pr/"
@@ -73,7 +75,7 @@ import time
 from databricks.sdk import WorkspaceClient
 
 if not PIPELINE_ID:
-    raise ValueError("Set the 'pipeline_id' to the target Lakeflow Pipeline's ID before running this cell.")
+    raise ValueError("Set the 'pipeline_id' to the target Pipeline's ID before running this cell.")
 
 w = WorkspaceClient()
 update = w.pipelines.start_update(pipeline_id=PIPELINE_ID)
@@ -87,6 +89,7 @@ while state not in TERMINAL_STATES:
     state = info.update.state.value if info.update.state else "UNKNOWN"
     print(f"Update state: {state}")
     if state not in TERMINAL_STATES:
+        # Wait for 15 seconds before checking the state again
         time.sleep(15)
 
 if state != "COMPLETED":

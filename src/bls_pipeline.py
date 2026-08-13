@@ -1,8 +1,4 @@
-"""Data ingestion logic for BLS and DataUSA Population API.
-
-All configuration (URLs, headers, paths, rate-limit settings) is owned by the
-calling notebook and passed in as arguments.
-"""
+"""Data ingestion logic for BLS and DataUSA Population API."""
 
 import os
 import time
