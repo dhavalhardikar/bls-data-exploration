@@ -52,17 +52,19 @@ DataFrame version is primary because:
 Things I'd handle differently if this were headed to a real client rather than a
 scoped refactor:
 
-- **Schema drift.** For a real client schema validation I'd add an explicit expected-schema check at
+- **Schema drift:** For a real client schema validation I'd add an explicit expected-schema check at
   Bronze (compare `df.schema` against a versioned expected schema, either failing loud
   or routing to a quarantine table) rather than discovering drift three layers later.
 
-- **Data volume.** For data at scale
+- **Data volume:** For data at scale
   production volume Auto Loader (`cloudFiles`)  should be considered for incremental load,
   checkpointed file discovery and would look at whether the population API needs pagination handling.
 
-- **Access control.** `CATALOG`/`SCHEMA`/`VOLUME` are plain constants with no
+- **Access control:** `CATALOG`/`SCHEMA`/`VOLUME` are plain constants with no
   Unity Catalog grant strategy attached. For a real client 
   environment specific RBAC should be added.
+
+- **No API contract validation:** for a real client, I'd validate BLS/DataUSA request and response payloads against a Swagger/OpenAPI spec at ingestion time — catching a malformed response or breaking API change before it silently pollutes Bronze, instead of discovering it in Silver/Gold.
 
 - **Monitoring.** Will use `logger()` instead of `print()` statements at info level to raise exceptions at necessary junctures in tandem with try catch block..
 For a real client I'd add audit log tables with 
