@@ -45,16 +45,6 @@ def silver_bls_data() -> DataFrame:
         & F.col("value").isNotNull()
     )
 
-    # --- Soft rule (native equivalent of expect "period_format_valid") — flag
-    # non-conforming rows for observability, but do NOT drop them.
-    # invalid_period_count = validated.filter(~F.col("period").rlike(_PERIOD_FORMAT_REGEX)).count()
-    # if invalid_period_count > 0:
-    #     print(
-    #         f"[DQ WARNING] silver_bls_data.period_format_valid: "
-    #         f"{invalid_period_count} row(s) have an unexpected 'period' format "
-    #         f"(expected Q01-Q05 or M01-M12). Rows are retained, not dropped."
-    #     )
-
     return validated
 
 

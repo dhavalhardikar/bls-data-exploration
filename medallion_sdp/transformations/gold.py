@@ -83,17 +83,3 @@ def gold_prs30006032_q1_population() -> DataFrame:
         on="year",
         how="left",
     )
-
-
-# NOTE: pyspark.pipelines transformation files can import plain Python helper
-# modules that live alongside them, so if you'd rather have a single source of
-# truth instead of two copies of the query logic, this file can call directly
-# into gold_reference.py, e.g.:
-#
-#   from gold_reference import best_year_per_series
-#   @dp.table(name="gold_best_year_per_series", ...)
-#   def gold_best_year_per_series() -> DataFrame:
-#       return best_year_per_series(dp.read("silver_bls_data"), dp.read("silver_bls_series"))
-#
-# Kept separate here so gold_reference.py has zero dependency on `dp`/pipeline
-# runtime and can be unit tested with a plain local SparkSession.
