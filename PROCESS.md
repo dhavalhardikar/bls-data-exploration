@@ -11,7 +11,7 @@ provides structure and clear lineage,
 The 2 source systems: 
 1. BLS's `/pr/` flat-file directory - tab-delimited fixed-format text scraped
 off an HTML directory listing, and
-2. DataUSA population API — one is , the other is nested JSON from a REST endpoint.
+2. DataUSA population API — nested JSON from a REST endpoint.
  
 2 seperate types of datasets brings challenges like 
 unexpected behavior or parser inconsistency. Splitting into three layers keeps each concern isolated:
@@ -20,7 +20,7 @@ unexpected behavior or parser inconsistency. Splitting into three layers keeps e
   make it *storable*. Sanatize column names to remove special characters and explode columns names of population json "data".
 
 - **Silver** — this is where "raw bytes" become "trustworthy rows": trimming 
-  strings, casting `year`/`value`/`population` to integer types.
+  strings, casting `year`/`value`/`population` to integer types and elimanting null values.
 
 - **Gold** — pure business logic on top of already-clean, already-typed data:
   aggregations, joins, and the analytical deliverables (population stats,
@@ -28,12 +28,11 @@ unexpected behavior or parser inconsistency. Splitting into three layers keeps e
 
 
 ### Modular approach
-It allows you to break down monolith notebooks(driver_notebook.py) into reusable components,(src.bls_pipline.py) which simplifies debugging, enhances testing, and eliminates code duplication.
+It allows you to break down monolith notebooks into reusable components,(src.bls_pipline.py) which simplifies debugging, enhances testing, and improves readability.
 
-`bls_pipeline.py`'s scraping/HEAD-check/retry-session logic runs in the **driver
-notebook**
+`bls_pipeline.py`'s scraping/HEAD-check/retry-session logic runs in the **driver notebook**.
 
-Ingestion kept outside the declarative DAG: scraping/retries/idempotent syncs — ran as a plain pre-step in the driver notebook, then the pipeline triggers, only once data has safely landed.
+Ingestion kept outside the declarative DAG: scraping/retries/idempotent syncs — ran as a plain pre-step in the driver notebook, then the declarative pipeline triggers(medallion_sdp), only once data has safely landed.
 
 ### Why PySpark DataFrame API is primary in Gold, with Spark SQL as a secondary file
 
@@ -68,7 +67,7 @@ scoped refactor:
 
 - **Monitoring.** Will use `logger()` instead of `print()` statements at info level to raise exceptions at necessary junctures in tandem with try catch block..
 For a real client I'd add audit log tables with 
-metrics table (or push to the pipeline's event log / a monitoring system) and wire an alert for expectation-failure rate crossing a threshold or in case of failure.
+metrics (or push to the pipeline's event log / a monitoring system) and wire an alert for expectation-failure rate crossing a threshold or in case of generic pipeline or ingestion failure.
 
 
 ## Retrospective
