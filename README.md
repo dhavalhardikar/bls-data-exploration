@@ -59,19 +59,3 @@ bronze_population ──> silver_population ──> gold_population_stats_2013_2
 
 Each Silver/Gold table reads its inputs via `dp.read("<table_name>")`, so the
 dependency graph above is inferred automatically by the pipeline runtime.
-
-## Key design notes
-
-- **Config, not hardcoded paths**: `bronze.py` resolves the Volume root from
-  pipeline configuration (`bls_pipeline.catalog/schema/volume`) via
-  `pipeline_config.resolve_volume_root`, since transformation files run in a
-  separate Spark session from the driver notebook and can't share Python state.
-- **Delta-safe column names**: BLS/Census raw files can contain spaces or
-  punctuation in headers; `bronze.py` sanitizes these at ingestion so nothing
-  downstream needs to special-case them.
-- **Native data quality**: Silver enforces the same hard-drop / soft-flag
-  semantics as Databricks' `@dp.expect_or_drop` / `@dp.expect`, but with plain
-  PySpark (`.filter()` + count-and-log), keeping the logic open-source-portable.
-- **Idempotent ingestion**: `bls_pipeline.py` only downloads a BLS file when its
-  size differs from what's stored, and only overwrites the population JSON when
-  its content hash changes — safe to re-run on a schedule.
