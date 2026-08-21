@@ -1,26 +1,17 @@
 """Silver layer: cleansing, type normalization, and data quality expectations.
 
-Refactored to use native, open-source PySpark DataFrame operations instead of
-proprietary Databricks declarative-pipeline expectation decorators
-(@dp.expect_or_drop / @dp.expect). @dp.table / dp.read remain, since those are
-the Spark Declarative Pipeline framework's core table-registration API, not a
-proprietary data-quality mechanism, and the task calls for preserving them.
+Refactored to use native, open-source PySpark DataFrame operations. 
+@dp.table / dp.read are the Spark Declarative Pipeline 
+framework's core table-registration API.
 
 Data-quality semantics are preserved exactly:
-  - Hard rules (previously @dp.expect_or_drop): rows failing the rule are
+  - Hard rules: rows failing the rule are
     dropped from the table's output, via a plain .filter(...) call.
-  - Soft rules (previously @dp.expect): rows failing the rule are NOT dropped,
-    but are flagged for observability. Reproduced natively by computing a
-    pass/fail count against the already-filtered DataFrame and logging it,
-    without removing any rows from the returned DataFrame.
 """
 
 import pyspark.pipelines as dp
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
-
-# Mirrors the previous @dp.expect("period_format_valid", ...) rule.
-# _PERIOD_FORMAT_REGEX = r"^(Q0[1-5]|M(0[1-9]|1[0-2]))$"
 
 
 @dp.table(
@@ -37,8 +28,8 @@ def silver_bls_data() -> DataFrame:
         F.trim(F.col("footnote_codes")).alias("footnote_codes"),
     )
 
-    # --- Hard rules (native equivalent of expect_or_drop "series_id_present",
-    # "year_present", "value_present") — rows failing any of these are dropped.
+    # --- Hard rules
+    # — rows failing any of these are dropped.
     validated = cleansed.filter(
         F.col("series_id").isNotNull()
         & F.col("year").isNotNull()
@@ -58,7 +49,7 @@ def silver_bls_series() -> DataFrame:
     other = [F.col(c) for c in df.columns if df.schema[c].dataType.typeName() != "string"]
     cleansed = df.select(*trimmed, *other)
 
-    # --- Hard rule (native equivalent of expect_or_drop "series_id_present") ---
+    # --- Hard rule ---
     return cleansed.filter(F.col("series_id").isNotNull())
 
 
@@ -107,8 +98,8 @@ def silver_population() -> DataFrame:
         F.col("Population").cast("BIGINT").alias("population"),
     )
 
-    # --- Hard rules (native equivalent of expect_or_drop "year_present",
-    # "population_present") — rows failing either are dropped.
+    # --- Hard rules ---
+    # rows failing are dropped.
     return cleansed.filter(
         F.col("year").isNotNull() & F.col("population").isNotNull()
     )

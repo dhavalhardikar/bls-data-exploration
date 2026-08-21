@@ -1,10 +1,4 @@
-"""Gold layer: analytical deliverables built on top of Silver.
-
-The transformation logic here is intentionally kept identical to
-gold_reference.py's plain-PySpark functions — see that module's docstring for why.
-If you change a query here, change it there too (or better: have this module call
-into gold_reference.py directly, see the note at the bottom of this file).
-"""
+"""Gold layer: analytical deliverables built on top of Silver."""
 
 import pyspark.pipelines as dp
 from pyspark.sql import DataFrame

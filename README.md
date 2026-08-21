@@ -38,8 +38,8 @@ pipeline configuration and from tables registered via `@dp.table`.
 | `bls_pipeline.py` | Ingestion | Scrapes the BLS `/pr/` directory and syncs the Population API into the Volume, idempotently (size/hash checks skip unchanged files). Pure `requests`/`bs4`, no Spark. |
 | `driver_notebook.py` | Orchestration | Databricks notebook: provisions catalog/schema/volume, calls `run_ingestion`, then triggers and monitors the declarative pipeline run via the Databricks SDK. |
 | `pipeline_config.py` | Config | Resolves `catalog`/`schema`/`volume` from pipeline configuration (with defaults) and centralizes the raw file paths within the Volume. Imported by `bronze.py`. |
-| `bronze.py` | Bronze | Reads raw BLS TSV files and the population JSON exactly as they land, with no cleansing beyond making column names Delta-safe (sanitizing spaces/punctuation). One `@dp.table` per raw source. |
-| `silver.py` | Silver | Cleanses/types Bronze output (trim strings, cast year/value/population) and applies data-quality rules natively (`.filter(...)` for hard/drop rules; count-and-log for soft/flag rules) — no proprietary `@dp.expect*` decorators. |
+| `bronze.py` | Bronze | Reads raw BLS TSV files and the population JSON exactly as they land, with no cleansing beyond making column names Delta-safe (sanitizing spaces). One `@dp.table` per raw source. |
+| `silver.py` | Silver | Cleanses/types Bronze output (trim strings, cast year/value/population and eliminates nulls) and applies data-quality rules natively (`.filter(...)` for hard/drop rules; count-and-log for soft/flag rules). |
 | `gold.py` | Gold | Analytical tables built from Silver: population mean/stddev (2013–2018), best year per BLS series (with resolved sector/measure labels), and a target series' Q1 values joined to population. |
 
 ## Table lineage

@@ -2,18 +2,7 @@
 
 This is an ALTERNATIVE implementation of the same 3 Gold queries defined in
 gold.py, expressed with native Spark SQL (CREATE OR REPLACE TEMP VIEW +
-spark.sql(...)) instead of the PySpark DataFrame API. It exists purely to
-demonstrate fluency in both APIs — join logic, business rules, and output
-schemas are identical to gold.py.
-
-@dp.table / dp.read are kept, since they are the Spark Declarative Pipeline
-framework's core table-registration API (not a proprietary transformation
-mechanism), and the task calls for preserving them.
-
-NOTE: table names below are suffixed with "_sql" so this file can coexist in
-the same pipeline as gold.py without a name collision. If you intend to swap
-gold.py out entirely in favor of this file, drop the "_sql" suffix from the
-@dp.table `name=` values instead.
+spark.sql(...)) instead of the PySpark DataFrame API.
 """
 
 import pyspark.pipelines as dp
